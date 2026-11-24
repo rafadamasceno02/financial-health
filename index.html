@@ -66,7 +66,11 @@
 
     <section id="dashboardPage" class="page">
       <div class="welcome">
-        <div><p class="eyebrow">SEU PATRIMÔNIO</p><h1>Controle o seu <span>futuro.</span></h1><p class="muted">Uma visão clara de onde você está e para onde vai.</p></div>
+        <div>
+          <p class="eyebrow">SEU PATRIMÔNIO</p>
+          <h1>Controle o seu <span>futuro.</span></h1>
+          <p class="muted">Uma visão clara de onde você está e para onde vai.</p>
+        </div>
         <div class="date-display" id="today"></div>
       </div>
 
@@ -74,7 +78,7 @@
         <div class="kpi-card featured">
           <div class="kpi-top"><span>Saldo atual</span><span>◉</span></div>
           <div class="kpi-value" id="currentBalance">R$ 0,00</div>
-          <div class="kpi-foot">Movimentações efetivadas</div>
+          <div class="kpi-foot">Movimentações efetivadas em dinheiro</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-top"><span>Entradas do mês</span><span class="green">↗</span></div>
@@ -89,43 +93,84 @@
         <div class="kpi-card">
           <div class="kpi-top"><span>Projeção futura</span><span>◷</span></div>
           <div class="kpi-value" id="futureBalance">R$ 0,00</div>
-          <div class="kpi-foot">Saldo atual + movimentações futuras</div>
+          <div class="kpi-foot">Saldo + lançamentos previstos</div>
         </div>
+      </div>
+
+      <div class="benefit-summary panel">
+        <div>
+          <p class="eyebrow">TOTAL DE BENEFÍCIOS</p>
+          <h3 id="benefitsTotal">R$ 0,00</h3>
+          <p class="muted">Benefícios recebidos neste mês, fora do saldo bancário.</p>
+        </div>
+        <div class="benefit-summary-icon">✳</div>
       </div>
 
       <div id="overviewCurrencies" class="currency-overview"></div>
 
       <div class="content-grid">
         <section class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">ACTIVITY</p><h3>Últimas movimentações</h3></div><button class="text-btn" data-goto="transactions">Ver todas →</button></div>
+          <div class="panel-heading">
+            <div><p class="eyebrow">ACTIVITY</p><h3>Últimas movimentações</h3></div>
+            <button class="text-btn" data-goto="transactions">Ver todas →</button>
+          </div>
           <div id="recentTransactions"></div>
         </section>
         <section class="panel">
-          <div class="panel-heading"><div><p class="eyebrow">UPCOMING</p><h3>Próximos lançamentos</h3></div></div>
+          <div class="panel-heading">
+            <div><p class="eyebrow">UPCOMING</p><h3>Próximos lançamentos</h3></div>
+          </div>
           <div id="upcomingTransactions"></div>
         </section>
       </div>
     </section>
 
     <section id="transactionsPage" class="page hidden">
-      <div class="section-intro"><p class="eyebrow">FINANCIAL ACTIVITY</p><h1>Movimentações</h1><p class="muted">Acompanhe entradas, despesas e compromissos futuros.</p></div>
+      <div class="section-intro">
+        <p class="eyebrow">FINANCIAL ACTIVITY</p>
+        <h1>Movimentações</h1>
+        <p class="muted">Acompanhe entradas, despesas, benefícios e compromissos futuros.</p>
+      </div>
       <section class="panel">
-        <div class="panel-heading"><h3>Histórico financeiro</h3><button class="primary-btn small" id="newTransaction2">+ Adicionar</button></div>
+        <div class="panel-heading">
+          <h3>Histórico financeiro</h3>
+          <button class="primary-btn small" id="newTransaction2">+ Adicionar</button>
+        </div>
         <div id="allTransactions"></div>
       </section>
     </section>
 
     <section id="investmentsPage" class="page hidden">
-      <div class="section-intro"><p class="eyebrow">WEALTH PLANNING</p><h1>Investimentos</h1><p class="muted">Projete o crescimento do seu patrimônio ao longo do tempo.</p></div>
+      <div class="section-intro">
+        <p class="eyebrow">WEALTH PLANNING</p>
+        <h1>Investimentos</h1>
+        <p class="muted">Projete o crescimento do seu patrimônio ao longo do tempo.</p>
+      </div>
       <div class="investment-grid">
         <section class="panel">
           <h3>Simulador de investimentos</h3>
           <form id="investmentForm" class="investment-form">
-            <label>Moeda<select id="investmentCurrency"><option value="BRL">BRL · Real</option><option value="USD">USD · Dólar</option><option value="EUR">EUR · Euro</option><option value="PEN">PEN · Sol peruano</option></select></label>
+            <label>Moeda
+              <select id="investmentCurrency">
+                <option value="BRL">BRL · Real</option>
+                <option value="USD">USD · Dólar</option>
+                <option value="EUR">EUR · Euro</option>
+                <option value="PEN">PEN · Sol peruano</option>
+              </select>
+            </label>
             <label>Aporte inicial<input type="number" id="initialInvestment" value="1000" min="0" step="0.01"></label>
             <label>Aporte mensal<input type="number" id="monthlyInvestment" value="500" min="0" step="0.01"></label>
             <label>Rentabilidade mensal (%)<input type="number" id="interestRate" value="0.8" min="0" step="0.01"></label>
-            <label>Período<select id="investmentPeriod"><option value="12">1 ano</option><option value="24">2 anos</option><option value="36">3 anos</option><option value="60">5 anos</option><option value="120">10 anos</option><option value="240">20 anos</option></select></label>
+            <label>Período
+              <select id="investmentPeriod">
+                <option value="12">1 ano</option>
+                <option value="24">2 anos</option>
+                <option value="36">3 anos</option>
+                <option value="60">5 anos</option>
+                <option value="120">10 anos</option>
+                <option value="240">20 anos</option>
+              </select>
+            </label>
             <button class="primary-btn" type="submit">Calcular projeção ↗</button>
           </form>
         </section>
@@ -145,17 +190,130 @@
 
 <div id="transactionModal" class="modal hidden">
   <div class="modal-box">
-    <div class="modal-heading"><div><p class="eyebrow">NEW TRANSACTION</p><h2>Nova movimentação</h2></div><button class="close-btn" id="closeModal">×</button></div>
+    <div class="modal-heading">
+      <div><p class="eyebrow">NEW TRANSACTION</p><h2>Nova movimentação</h2></div>
+      <button class="close-btn" id="closeModal">×</button>
+    </div>
+
     <form id="transactionForm">
-      <label>Tipo<select id="transactionType"><option value="income">Entrada</option><option value="expense">Saída</option></select></label>
-      <label>Descrição<input id="description" placeholder="Ex: Salário, aluguel..." required maxlength="100"></label>
+      <label>Tipo
+        <select id="transactionType">
+          <option value="income">Entrada</option>
+          <option value="expense">Saída</option>
+        </select>
+      </label>
+
+      <label>Descrição
+        <input id="description" placeholder="Ex: Salário, aluguel..." required maxlength="100">
+      </label>
+
       <div class="form-row">
         <label>Valor<input id="amount" type="number" min="0.01" step="0.01" placeholder="0,00" required></label>
-        <label>Moeda<select id="transactionCurrency"><option value="BRL">BRL</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="PEN">PEN</option></select></label>
+        <label>Moeda
+          <select id="transactionCurrency">
+            <option value="BRL">BRL</option>
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+            <option value="PEN">PEN</option>
+          </select>
+        </label>
       </div>
-      <label>Categoria<select id="category"><option>Salário</option><option>Moradia</option><option>Alimentação</option><option>Transporte</option><option>Saúde</option><option>Lazer</option><option>Investimentos</option><option>Educação</option><option>Outros</option></select></label>
-      <label>Data da movimentação<div class="calendar-wrap"><input id="transactionDate" type="text" readonly required placeholder="Selecionar data"><div id="calendar" class="calendar hidden"></div></div></label>
-      <label class="check-label"><input id="isFuture" type="checkbox"> Esta movimentação é futura / prevista</label>
+
+      <label>Categoria
+        <select id="category">
+          <option>Salário</option>
+          <option>Moradia</option>
+          <option>Alimentação</option>
+          <option>Transporte</option>
+          <option>Saúde</option>
+          <option>Lazer</option>
+          <option>Investimentos</option>
+          <option>Educação</option>
+          <option>Benefícios</option>
+          <option>Outros</option>
+        </select>
+      </label>
+
+      <div id="benefitToggleWrap" class="benefit-toggle-wrap">
+        <label class="check-label">
+          <input id="isBenefit" type="checkbox">
+          Esta entrada é um benefício (não dinheiro em conta)
+        </label>
+      </div>
+
+      <div id="benefitFields" class="conditional-fields hidden">
+        <label>Tipo de benefício
+          <select id="benefitType">
+            <option value="VR">Vale-refeição (VR)</option>
+            <option value="VA">Vale-alimentação (VA)</option>
+            <option value="HOME_OFFICE">Auxílio home office</option>
+            <option value="TRANSPORT">Vale-transporte</option>
+            <option value="HEALTH">Plano/auxílio saúde</option>
+            <option value="BONUS">Bônus</option>
+            <option value="COMMISSION">Comissão</option>
+            <option value="PLR">Participação nos lucros (PLR)</option>
+            <option value="OTHER">Outro benefício</option>
+          </select>
+        </label>
+        <p class="field-hint">O benefício será exibido na sua remuneração, mas não será somado ao saldo bancário.</p>
+      </div>
+
+      <label>Data da movimentação
+        <div class="calendar-wrap">
+          <input id="transactionDate" type="text" readonly required placeholder="Selecionar data">
+          <div id="calendar" class="calendar hidden"></div>
+        </div>
+      </label>
+
+      <div class="form-divider"></div>
+      <div class="recurrence-heading">
+        <div><p class="eyebrow">AUTOMATION</p><h3>Recorrência</h3></div>
+        <span class="recurrence-tag">OPCIONAL</span>
+      </div>
+
+      <label class="check-label">
+        <input id="isRecurring" type="checkbox">
+        Repetir esta movimentação automaticamente
+      </label>
+
+      <div id="recurrenceFields" class="conditional-fields hidden">
+        <label>Frequência
+          <select id="recurrenceFrequency">
+            <option value="monthly">Mensal</option>
+            <option value="daily">Diária</option>
+          </select>
+        </label>
+
+        <div id="monthlyFields">
+          <label>Dia do mês
+            <select id="monthlyPosition">
+              <option value="fixed">Dia específico</option>
+              <option value="last_business">Último dia útil</option>
+              <option value="penultimate_business">Penúltimo dia útil</option>
+            </select>
+          </label>
+          <label id="monthlyDayWrap">Dia do pagamento/recebimento
+            <select id="monthlyDay"></select>
+          </label>
+          <p class="field-hint">Os dias úteis consideram segunda a sexta-feira. Feriados nacionais e locais não são descontados automaticamente.</p>
+        </div>
+
+        <div class="form-row">
+          <label>Início
+            <input id="recurrenceStart" type="date" required>
+          </label>
+          <label>Término (opcional)
+            <input id="recurrenceEnd" type="date">
+          </label>
+        </div>
+        <p class="field-hint">O Orbit criará as ocorrências automaticamente. Você poderá excluir uma ocorrência sem cancelar toda a regra.</p>
+      </div>
+
+      <label class="check-label" id="futureWrap">
+        <input id="isFuture" type="checkbox">
+        Esta movimentação é futura / prevista
+      </label>
+
       <button class="primary-btn full" type="submit" id="saveTransaction">Salvar movimentação</button>
       <p id="transactionMessage" class="message"></p>
     </form>
