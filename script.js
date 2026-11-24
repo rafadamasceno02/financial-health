@@ -5,11 +5,24 @@ const SUPABASE_KEY = 'sb_publishable_Bg_kJnug1LVWc86dLp3gvw_Vcat5he6';
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const $ = id => document.getElementById(id);
+
 const currencies = {
-  BRL: { locale: 'pt-BR', symbol: 'R$' },
-  USD: { locale: 'en-US', symbol: '$' },
-  EUR: { locale: 'de-DE', symbol: '€' },
-  PEN: { locale: 'es-PE', symbol: 'S/' }
+  BRL: { locale: 'pt-BR' },
+  USD: { locale: 'en-US' },
+  EUR: { locale: 'de-DE' },
+  PEN: { locale: 'es-PE' }
+};
+
+const benefitNames = {
+  VR: 'Vale-refeição',
+  VA: 'Vale-alimentação',
+  HOME_OFFICE: 'Auxílio home office',
+  TRANSPORT: 'Vale-transporte',
+  HEALTH: 'Auxílio saúde',
+  BONUS: 'Bônus',
+  COMMISSION: 'Comissão',
+  PLR: 'Participação nos lucros',
+  OTHER: 'Outro benefício'
 };
 
 let currentUser = null;
@@ -17,6 +30,7 @@ let transactions = [];
 let signupMode = false;
 let calendarDate = new Date();
 let selectedDate = null;
+let recurringRules = [];
 
 function money(value, currency) {
   return new Intl.NumberFormat(currencies[currency].locale, {
@@ -26,11 +40,6 @@ function money(value, currency) {
   }).format(Number(value) || 0);
 }
 
-function formatDate(date) {
-  const [y, m, d] = date.split('-');
-  return `${d}/${m}/${y}`;
-}
-
 function localISO(date = new Date()) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -38,15 +47,42 @@ function localISO(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+function formatDate(date) {
+  if (!date) return '';
+  const [y, m, d] = date.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 function monthStart() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
+function dateFromISO(value) {
+  const [y, m, d] = value.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function addDaysISO(value, amount) {
+  const date = dateFromISO(value);
+  date.setDate(date.getDate() + amount);
+  return localISO(date);
+}
+
+function escapeHTML(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[char]);
+}
+
 function notify(message) {
   $('toast').textContent = message;
   $('toast').classList.add('show');
-  setTimeout(() => $('toast').classList.remove('show'), 2600);
+  setTimeout(() => $('toast').classList.remove('show'), 3000);
 }
 
 // AUTENTICAÇÃO
@@ -108,6 +144,8 @@ async function enterApp() {
     dateStyle: 'full'
   }).format(new Date());
 
+  await loadRecurringRules();
+  await generateRecurringOccurrences();
   await loadTransactions();
   render();
 }
@@ -116,11 +154,28 @@ $('logout').addEventListener('click', async () => {
   await db.auth.signOut();
   currentUser = null;
   transactions = [];
+  recurringRules = [];
   $('app').classList.add('hidden');
   $('authScreen').classList.remove('hidden');
 });
 
 // BANCO DE DADOS
+
+async function loadRecurringRules() {
+  const { data, error } = await db
+    .from('recurring_rules')
+    .select('*')
+    .eq('user_id', currentUser.id)
+    .eq('active', true);
+
+  if (error) {
+    notify('Erro ao carregar recorrências: ' + error.message);
+    recurringRules = [];
+    return;
+  }
+
+  recurringRules = data || [];
+}
 
 async function loadTransactions() {
   const { data, error } = await db
@@ -130,7 +185,7 @@ async function loadTransactions() {
     .order('transaction_date', { ascending: false });
 
   if (error) {
-    notify('Erro ao carregar dados: ' + error.message);
+    notify('Erro ao carregar movimentações: ' + error.message);
     return;
   }
 
@@ -148,11 +203,220 @@ async function saveTransaction(transaction) {
       currency: transaction.currency,
       category: transaction.category,
       transaction_date: transaction.transaction_date,
-      is_future: transaction.is_future
+      is_future: transaction.is_future,
+      is_benefit: transaction.is_benefit,
+      benefit_type: transaction.benefit_type,
+      recurrence_id: null,
+      recurrence_key: null
     });
 
   if (error) throw error;
 
+  await loadTransactions();
+  render();
+}
+
+// RECORRÊNCIAS
+
+function isBusinessDay(date) {
+  const day = date.getDay();
+  return day !== 0 && day !== 6;
+}
+
+function getBusinessDay(year, month, position) {
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  let found = 0;
+
+  for (let day = lastDay; day >= 1; day--) {
+    const date = new Date(year, month, day);
+
+    if (isBusinessDay(date)) {
+      found++;
+
+      if (position === 'last_business' && found === 1) {
+        return localISO(date);
+      }
+
+      if (position === 'penultimate_business' && found === 2) {
+        return localISO(date);
+      }
+    }
+  }
+
+  return null;
+}
+
+function getMonthlyOccurrence(rule, year, month) {
+  if (rule.monthly_position === 'last_business') {
+    return getBusinessDay(year, month, 'last_business');
+  }
+
+  if (rule.monthly_position === 'penultimate_business') {
+    return getBusinessDay(year, month, 'penultimate_business');
+  }
+
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const day = Math.min(Number(rule.monthly_day), lastDay);
+
+  return localISO(new Date(year, month, day));
+}
+
+function getRuleOccurrences(rule, today) {
+  const dates = [];
+  const horizon = addDaysISO(today, 365);
+  const earliest = addDaysISO(today, -730);
+  const start = rule.start_date > earliest ? rule.start_date : earliest;
+  const end = rule.end_date && rule.end_date < horizon
+    ? rule.end_date
+    : horizon;
+
+  if (start > end) return dates;
+
+  if (rule.frequency === 'daily') {
+    let current = start;
+
+    while (current <= end) {
+      dates.push(current);
+      current = addDaysISO(current, 1);
+    }
+
+    return dates;
+  }
+
+  const startDate = dateFromISO(start);
+  const endDate = dateFromISO(end);
+
+  let year = startDate.getFullYear();
+  let month = startDate.getMonth();
+
+  while (
+    year < endDate.getFullYear() ||
+    (year === endDate.getFullYear() && month <= endDate.getMonth())
+  ) {
+    const occurrence = getMonthlyOccurrence(rule, year, month);
+
+    if (occurrence && occurrence >= start && occurrence <= end) {
+      dates.push(occurrence);
+    }
+
+    month++;
+
+    if (month > 11) {
+      month = 0;
+      year++;
+    }
+  }
+
+  return dates;
+}
+
+async function generateRecurringOccurrences() {
+  if (!currentUser || !recurringRules.length) return;
+
+  const today = localISO();
+  const rows = [];
+
+  recurringRules.forEach(rule => {
+    const dates = getRuleOccurrences(rule, today);
+
+    dates.forEach(date => {
+      rows.push({
+        user_id: currentUser.id,
+        type: rule.type,
+        description: rule.description,
+        amount: rule.amount,
+        currency: rule.currency,
+        category: rule.category,
+        transaction_date: date,
+        is_future: date > today,
+        is_benefit: rule.is_benefit,
+        benefit_type: rule.benefit_type,
+        recurrence_id: rule.id,
+        recurrence_key: `${rule.id}:${date}`
+      });
+    });
+  });
+
+  if (!rows.length) return;
+
+  const { error } = await db
+    .from('transactions')
+    .upsert(rows, {
+      onConflict: 'recurrence_key',
+      ignoreDuplicates: true
+    });
+
+  if (error) {
+    notify('Erro ao gerar recorrências: ' + error.message);
+  }
+}
+
+async function createRecurringRule(transaction) {
+  const frequency = $('recurrenceFrequency').value;
+  const position = frequency === 'monthly'
+    ? $('monthlyPosition').value
+    : null;
+
+  const startDate = $('recurrenceStart').value;
+  const endDate = $('recurrenceEnd').value || null;
+
+  if (!startDate) {
+    throw new Error('Informe a data de início da recorrência.');
+  }
+
+  if (endDate && endDate < startDate) {
+    throw new Error('A data final não pode ser anterior à inicial.');
+  }
+
+  const rule = {
+    user_id: currentUser.id,
+    type: transaction.type,
+    description: transaction.description,
+    amount: transaction.amount,
+    currency: transaction.currency,
+    category: transaction.category,
+    is_benefit: transaction.is_benefit,
+    benefit_type: transaction.benefit_type,
+    frequency,
+    monthly_position: position,
+    monthly_day: frequency === 'monthly' && position === 'fixed'
+      ? Number($('monthlyDay').value)
+      : null,
+    start_date: startDate,
+    end_date: endDate,
+    active: true
+  };
+
+  const { error } = await db
+    .from('recurring_rules')
+    .insert(rule);
+
+  if (error) throw error;
+
+  await loadRecurringRules();
+  await generateRecurringOccurrences();
+  await loadTransactions();
+  render();
+}
+
+async function cancelRecurringRule(id) {
+  if (!confirm('Deseja cancelar esta recorrência? As ocorrências já criadas serão mantidas.')) {
+    return;
+  }
+
+  const { error } = await db
+    .from('recurring_rules')
+    .update({ active: false })
+    .eq('id', id)
+    .eq('user_id', currentUser.id);
+
+  if (error) {
+    notify('Erro ao cancelar recorrência: ' + error.message);
+    return;
+  }
+
+  await loadRecurringRules();
+  notify('Recorrência cancelada. Os lançamentos existentes foram mantidos.');
   await loadTransactions();
   render();
 }
@@ -187,7 +451,10 @@ function filteredTransactions() {
 }
 
 function totals(list, currency) {
-  const relevant = list.filter(t => t.currency === currency);
+  const relevant = list.filter(t =>
+    t.currency === currency && !t.is_benefit
+  );
+
   const income = relevant
     .filter(t => t.type === 'income')
     .reduce((s, t) => s + Number(t.amount), 0);
@@ -199,50 +466,63 @@ function totals(list, currency) {
   return { income, expense, balance: income - expense };
 }
 
+function benefitTotals(list, currency) {
+  return list
+    .filter(t =>
+      t.currency === currency &&
+      t.is_benefit &&
+      t.type === 'income'
+    )
+    .reduce((s, t) => s + Number(t.amount), 0);
+}
+
 function render() {
   if (!currentUser) return;
 
   const list = filteredTransactions();
   const currency = $('currencyFilter').value;
-
   const now = localISO();
   const start = monthStart();
 
   const current = list.filter(t => !t.is_future);
-  const future = list.filter(t => t.is_future);
+  const future = list.filter(t =>
+    t.is_future && t.transaction_date >= now
+  );
 
   const month = current.filter(t =>
     t.transaction_date >= start &&
     t.transaction_date <= now
   );
 
-  const currentTotals = currency === 'ALL'
-    ? null
-    : totals(current, currency);
+  const monthBenefits = month.filter(t => t.is_benefit);
 
-  const monthTotals = currency === 'ALL'
-    ? null
-    : totals(month, currency);
+  if (currency === 'ALL') {
+    $('currentBalance').textContent = 'Multimoeda';
+    $('incomeTotal').textContent = 'Multimoeda';
+    $('expenseTotal').textContent = 'Multimoeda';
+    $('futureBalance').textContent = 'Multimoeda';
+    $('benefitsTotal').textContent = 'Multimoeda';
+  } else {
+    const currentTotals = totals(current, currency);
+    const monthTotals = totals(month, currency);
+    const futureTotals = totals(future, currency);
+    const benefits = benefitTotals(monthBenefits, currency);
 
-  const futureTotals = currency === 'ALL'
-    ? null
-    : totals(future, currency);
+    $('currentBalance').textContent =
+      money(currentTotals.balance, currency);
 
-  $('currentBalance').textContent = currency === 'ALL'
-    ? 'Multimoeda'
-    : money(currentTotals.balance, currency);
+    $('incomeTotal').textContent =
+      money(monthTotals.income, currency);
 
-  $('incomeTotal').textContent = currency === 'ALL'
-    ? 'Multimoeda'
-    : money(monthTotals.income, currency);
+    $('expenseTotal').textContent =
+      money(monthTotals.expense, currency);
 
-  $('expenseTotal').textContent = currency === 'ALL'
-    ? 'Multimoeda'
-    : money(monthTotals.expense, currency);
+    $('futureBalance').textContent =
+      money(currentTotals.balance + futureTotals.balance, currency);
 
-  $('futureBalance').textContent = currency === 'ALL'
-    ? 'Multimoeda'
-    : money(currentTotals.balance + futureTotals.balance, currency);
+    $('benefitsTotal').textContent =
+      money(benefits, currency);
+  }
 
   renderCurrencyOverview();
   renderRecent(list);
@@ -254,8 +534,13 @@ function renderCurrencyOverview() {
   const codes = Object.keys(currencies);
 
   $('overviewCurrencies').innerHTML = codes.map(code => {
-    const t = totals(
-      transactions.filter(x => !x.is_future),
+    const t = totals(transactions.filter(x => !x.is_future), code);
+    const benefits = benefitTotals(
+      transactions.filter(x =>
+        !x.is_future &&
+        x.transaction_date >= monthStart() &&
+        x.transaction_date <= localISO()
+      ),
       code
     );
 
@@ -263,6 +548,7 @@ function renderCurrencyOverview() {
       <div class="currency-chip">
         <span>${code} · Saldo atual</span>
         <strong>${money(t.balance, code)}</strong>
+        <span class="currency-benefit">Benefícios no mês: ${money(benefits, code)}</span>
       </div>
     `;
   }).join('');
@@ -273,35 +559,36 @@ function renderCurrencyOverview() {
 function transactionHTML(t, showDelete = false) {
   const income = t.type === 'income';
   const future = t.is_future;
+  const benefit = t.is_benefit;
+  const recurring = Boolean(t.recurrence_id);
+
+  const badges = `
+    <div class="transaction-badges">
+      ${future ? '<span class="mini-badge">PREVISTO</span>' : ''}
+      ${benefit ? `<span class="mini-badge benefit">${escapeHTML(benefitNames[t.benefit_type] || 'BENEFÍCIO')}</span>` : ''}
+      ${recurring ? '<span class="mini-badge recurring">RECORRENTE</span>' : ''}
+    </div>
+  `;
 
   return `
     <div class="transaction-row">
-      <div class="transaction-icon">${income ? '↗' : '↘'}</div>
+      <div class="transaction-icon">${benefit ? '✳' : (income ? '↗' : '↘')}</div>
       <div class="transaction-info">
         <strong>${escapeHTML(t.description)}</strong>
         <small>${escapeHTML(t.category)} · ${formatDate(t.transaction_date)} · ${t.currency}</small>
-        ${future ? '<div class="status">PREVISTO</div>' : ''}
+        ${badges}
       </div>
       <div class="transaction-amount ${income ? 'green' : 'red'}">
         ${income ? '+' : '-'}${money(t.amount, t.currency)}
       </div>
       ${showDelete ? `
         <div class="transaction-actions">
-          <button class="delete-btn" data-delete="${t.id}" title="Excluir">✕</button>
+          <button class="delete-btn" data-delete="${t.id}" title="Excluir ocorrência">✕</button>
+          ${recurring ? `<button class="delete-btn cancel-rule-btn" data-cancel-rule="${t.recurrence_id}" title="Cancelar recorrência">Ⅱ</button>` : ''}
         </div>
       ` : ''}
     </div>
   `;
-}
-
-function escapeHTML(value) {
-  return String(value).replace(/[&<>"']/g, char => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;'
-  })[char]);
 }
 
 function renderRecent(list) {
@@ -323,7 +610,7 @@ function renderUpcoming(list) {
     .filter(t => t.is_future && t.transaction_date >= today)
     .slice()
     .sort((a, b) => a.transaction_date.localeCompare(b.transaction_date))
-    .slice(0, 6);
+    .slice(0, 8);
 
   $('upcomingTransactions').innerHTML = upcoming.length
     ? upcoming.map(t => transactionHTML(t)).join('')
@@ -344,9 +631,46 @@ function renderAll(list) {
       deleteTransaction(button.dataset.delete)
     );
   });
+
+  document.querySelectorAll('[data-cancel-rule]').forEach(button => {
+    button.addEventListener('click', () =>
+      cancelRecurringRule(button.dataset.cancelRule)
+    );
+  });
 }
 
-// MODAL DE MOVIMENTAÇÃO
+// MODAL
+
+function populateMonthlyDays() {
+  $('monthlyDay').innerHTML = Array.from({ length: 31 }, (_, i) => {
+    const day = i + 1;
+    return `<option value="${day}">${day}º dia</option>`;
+  }).join('');
+}
+
+function updateRecurrenceFields() {
+  const recurring = $('isRecurring').checked;
+  const monthly = $('recurrenceFrequency').value === 'monthly';
+  const fixed = $('monthlyPosition').value === 'fixed';
+
+  $('recurrenceFields').classList.toggle('hidden', !recurring);
+  $('monthlyFields').classList.toggle('hidden', !monthly);
+  $('monthlyDayWrap').classList.toggle('hidden', !monthly || !fixed);
+
+  $('futureWrap').classList.toggle('hidden', recurring);
+}
+
+function updateBenefitFields() {
+  const isIncome = $('transactionType').value === 'income';
+  const checked = $('isBenefit').checked && isIncome;
+
+  $('benefitToggleWrap').classList.toggle('hidden', !isIncome);
+  $('benefitFields').classList.toggle('hidden', !checked);
+
+  if (checked) {
+    $('category').value = 'Benefícios';
+  }
+}
 
 function openModal() {
   $('transactionModal').classList.remove('hidden');
@@ -356,7 +680,15 @@ function openModal() {
   selectedDate = new Date();
   calendarDate = new Date();
 
-  $('transactionDate').value = localISO(selectedDate);
+  const today = localISO(selectedDate);
+
+  $('transactionDate').value = today;
+  $('recurrenceStart').value = today;
+  $('recurrenceEnd').value = '';
+
+  populateMonthlyDays();
+  updateRecurrenceFields();
+  updateBenefitFields();
   renderCalendar();
 }
 
@@ -373,17 +705,36 @@ $('transactionModal').addEventListener('click', e => {
   if (e.target === $('transactionModal')) closeModal();
 });
 
+$('transactionType').addEventListener('change', updateBenefitFields);
+$('isBenefit').addEventListener('change', updateBenefitFields);
+$('isRecurring').addEventListener('change', updateRecurrenceFields);
+$('recurrenceFrequency').addEventListener('change', updateRecurrenceFields);
+$('monthlyPosition').addEventListener('change', updateRecurrenceFields);
+
+$('transactionDate').addEventListener('change', () => {
+  if ($('isRecurring').checked) {
+    $('recurrenceStart').value = $('transactionDate').value;
+  }
+});
+
 $('transactionForm').addEventListener('submit', async e => {
   e.preventDefault();
+
+  const isBenefit = $('isBenefit').checked &&
+    $('transactionType').value === 'income';
+
+  const isRecurring = $('isRecurring').checked;
 
   const transaction = {
     type: $('transactionType').value,
     description: $('description').value.trim(),
     amount: Number($('amount').value),
     currency: $('transactionCurrency').value,
-    category: $('category').value,
+    category: isBenefit ? 'Benefícios' : $('category').value,
     transaction_date: $('transactionDate').value,
-    is_future: $('isFuture').checked
+    is_future: $('isFuture').checked,
+    is_benefit: isBenefit,
+    benefit_type: isBenefit ? $('benefitType').value : null
   };
 
   if (!transaction.transaction_date || transaction.amount <= 0) {
@@ -391,9 +742,16 @@ $('transactionForm').addEventListener('submit', async e => {
     return;
   }
 
-  if (!transaction.is_future && transaction.transaction_date > localISO()) {
+  if (!isRecurring && !transaction.is_future &&
+      transaction.transaction_date > localISO()) {
     $('transactionMessage').textContent =
       'Para uma data futura, marque a opção de movimentação prevista.';
+    return;
+  }
+
+  if (isRecurring && $('recurrenceStart').value === '') {
+    $('transactionMessage').textContent =
+      'Informe a data de início da recorrência.';
     return;
   }
 
@@ -401,9 +759,15 @@ $('transactionForm').addEventListener('submit', async e => {
   $('saveTransaction').textContent = 'Salvando...';
 
   try {
-    await saveTransaction(transaction);
+    if (isRecurring) {
+      await createRecurringRule(transaction);
+      notify('Recorrência criada com sucesso.');
+    } else {
+      await saveTransaction(transaction);
+      notify('Movimentação salva com sucesso.');
+    }
+
     closeModal();
-    notify('Movimentação salva com sucesso.');
   } catch (error) {
     $('transactionMessage').textContent = error.message;
   } finally {
@@ -446,7 +810,6 @@ function renderCalendar() {
 
   for (let d = 1; d <= days; d++) {
     const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-
     const selected = $('transactionDate').value === date;
     const isToday = today === date;
 
@@ -458,7 +821,6 @@ function renderCalendar() {
   }
 
   html += '</div>';
-
   $('calendar').innerHTML = html;
 
   $('prevMonth').addEventListener('click', () => {
@@ -474,6 +836,7 @@ function renderCalendar() {
   $('calendar').querySelectorAll('[data-date]').forEach(button => {
     button.addEventListener('click', () => {
       $('transactionDate').value = button.dataset.date;
+      $('recurrenceStart').value = button.dataset.date;
       $('calendar').classList.add('hidden');
     });
   });
@@ -518,8 +881,13 @@ $('investmentForm').addEventListener('submit', e => {
   calculateInvestment();
 });
 
-['initialInvestment', 'monthlyInvestment', 'interestRate',
- 'investmentPeriod', 'investmentCurrency'].forEach(id => {
+[
+  'initialInvestment',
+  'monthlyInvestment',
+  'interestRate',
+  'investmentPeriod',
+  'investmentCurrency'
+].forEach(id => {
   $(id).addEventListener('change', calculateInvestment);
 });
 
@@ -556,6 +924,9 @@ $('currencyFilter').addEventListener('change', render);
 
 async function initialize() {
   calculateInvestment();
+  populateMonthlyDays();
+  updateRecurrenceFields();
+  updateBenefitFields();
 
   const { data, error } = await db.auth.getSession();
 
@@ -574,6 +945,7 @@ db.auth.onAuthStateChange((event, session) => {
   if (event === 'SIGNED_OUT') {
     currentUser = null;
     transactions = [];
+    recurringRules = [];
     $('app').classList.add('hidden');
     $('authScreen').classList.remove('hidden');
   }
