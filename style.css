@@ -334,7 +334,7 @@ label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; }
 }
 .modal-heading h2 { font: 700 19px 'Manrope'; margin: 0; }
 .close-btn { background: none; border: none; color: var(--muted); font-size: 27px; }
-#transactionForm { display: grid; gap: 15px; }
+#transactionForm, #editRuleForm { display: grid; gap: 15px; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .check-label {
   display: flex;
@@ -344,50 +344,6 @@ label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; }
   line-height: 1.5;
 }
 .check-label input { width: 15px; height: 15px; accent-color: var(--green); flex-shrink: 0; }
-
-.calendar-wrap { position: relative; }
-.calendar {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  width: 100%;
-  background: #202320;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 13px;
-  z-index: 50;
-  box-shadow: 0 15px 40px #0008;
-}
-.calendar-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12px;
-}
-.calendar-header button {
-  background: var(--panel2);
-  color: var(--white);
-  border: 0;
-  border-radius: 6px;
-  padding: 6px 10px;
-}
-.calendar-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
-  text-align: center;
-}
-.calendar-grid span { color: var(--muted); font-size: 10px; padding: 6px 0; }
-.calendar-grid button {
-  background: transparent;
-  color: var(--white);
-  border: 0;
-  border-radius: 7px;
-  padding: 9px 0;
-  font-size: 11px;
-}
-.calendar-grid button:hover, .calendar-grid button.selected { background: var(--green); color: #101110; }
-.calendar-grid button.today { border: 1px solid var(--green); }
 
 .toast {
   position: fixed;
@@ -407,10 +363,10 @@ label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; }
 }
 .toast.show { opacity: 1; transform: translateY(0); }
 
-/* BENEFÍCIOS */
+/* BENEFÍCIOS E RECORRÊNCIAS */
 
 .benefit-summary {
-  margin: 0 0 15px;
+  margin: 30px 0 25px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -486,31 +442,288 @@ label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; }
 .mini-badge.benefit { background: #30302a; color: #e0d6a4; }
 .mini-badge.recurring { background: #242d35; color: #a8c9df; }
 
+/* CALENDÁRIO ORBIT */
+
+.calendar-wrap { position: relative; }
+.calendar-trigger {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--white);
+  background: #111311;
+  text-align: left;
+  transition: .2s;
+}
+.calendar-trigger:hover,
+.calendar-trigger:focus {
+  border-color: #8ca77e;
+  background: #171b16;
+}
+.calendar-trigger span:last-child {
+  color: var(--green);
+  font-size: 17px;
+}
+.calendar {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  width: min(100%, 340px);
+  background: #1b1e1b;
+  border: 1px solid #3a4038;
+  border-radius: 16px;
+  padding: 17px;
+  z-index: 60;
+  box-shadow: 0 22px 65px #000b;
+  animation: calendarIn .16s ease-out;
+}
+@keyframes calendarIn {
+  from { opacity: 0; transform: translateY(-6px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 17px;
+}
+.calendar-month {
+  font: 700 14px 'Manrope';
+  text-transform: capitalize;
+}
+.calendar-nav {
+  display: flex;
+  gap: 7px;
+}
+.calendar-header button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  background: #292e28;
+  color: var(--white);
+  border: 1px solid #3a4038;
+  border-radius: 9px;
+  font-size: 18px;
+  transition: .2s;
+}
+.calendar-header button:hover {
+  background: #394333;
+  color: var(--green);
+}
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+  text-align: center;
+}
+.calendar-grid .weekday {
+  color: #777f74;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 7px 0 10px;
+}
+.calendar-grid .empty-day {
+  min-height: 35px;
+}
+.calendar-grid button {
+  aspect-ratio: 1;
+  background: transparent;
+  color: #e5e8e1;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  font-size: 11px;
+  transition: .15s;
+}
+.calendar-grid button:hover {
+  background: #30372d;
+  border-color: #4b5844;
+}
+.calendar-grid button.selected {
+  background: var(--green);
+  color: #101510;
+  font-weight: 800;
+}
+.calendar-grid button.today:not(.selected) {
+  border-color: var(--green);
+  color: var(--green);
+}
+.calendar-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--border);
+  margin-top: 14px;
+  padding-top: 13px;
+}
+.calendar-footer button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 7px 9px;
+  border-radius: 7px;
+}
+.calendar-footer button:hover { color: var(--green); background: #292e28; }
+.calendar-footer .calendar-confirm {
+  color: #111510;
+  background: var(--green);
+  font-weight: 800;
+  padding: 8px 14px;
+}
+
+/* GERENCIAMENTO DE RECORRÊNCIAS */
+
+.recurrence-overview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+  margin: 0 0 17px;
+}
+.recurrence-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #171a17;
+}
+.recurrence-stat span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+}
+.recurrence-stat strong {
+  font: 800 27px 'Manrope';
+  color: var(--green);
+}
+.rule-card {
+  padding: 17px 0;
+  border-bottom: 1px solid var(--border);
+}
+.rule-card:last-child { border-bottom: 0; }
+.rule-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 13px;
+}
+.rule-icon {
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #263024;
+  color: var(--green);
+  font-size: 19px;
+}
+.rule-info { flex: 1; min-width: 0; }
+.rule-info strong {
+  display: block;
+  font-size: 13px;
+  margin: 2px 0 5px;
+}
+.rule-info small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+.rule-amount {
+  font: 700 14px 'Manrope';
+  text-align: right;
+  white-space: nowrap;
+}
+.rule-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 7px;
+  padding: 4px 7px;
+  border-radius: 5px;
+  font-size: 9px;
+  background: #293326;
+  color: var(--green);
+}
+.rule-status.paused {
+  background: #302c25;
+  color: #d7bd8b;
+}
+.rule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 13px 0 0 55px;
+}
+.rule-action {
+  padding: 7px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: #202320;
+  color: var(--muted);
+  font-size: 10px;
+  transition: .2s;
+}
+.rule-action:hover {
+  color: var(--green);
+  border-color: #53634b;
+}
+.rule-action.danger:hover {
+  color: var(--red);
+  border-color: #68413d;
+}
+.rule-empty {
+  text-align: center;
+  padding: 35px 15px;
+  color: var(--muted);
+}
+.rule-empty strong {
+  display: block;
+  color: var(--white);
+  font: 700 14px 'Manrope';
+  margin-bottom: 7px;
+}
+.rule-empty p {
+  font-size: 11px;
+  margin: 0;
+  line-height: 1.6;
+}
+.currency-benefit {
+  margin-top: 7px;
+  color: #c7c19b !important;
+}
+
+/* RESPONSIVIDADE */
+
 @media(max-width:1100px) {
   .main { padding: 25px; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .currency-overview { grid-template-columns: repeat(2, 1fr); }
 }
+
 @media(max-width:760px) {
   .sidebar {
     width: 100%;
     height: auto;
     inset: auto 0 0;
-    padding: 9px 10px;
+    padding: 7px 5px;
     border: 0;
     border-top: 1px solid var(--border);
   }
   .sidebar .brand, .side-label, .sidebar-bottom { display: none; }
-  nav { display: flex; justify-content: space-around; }
+  nav { display: flex; justify-content: space-around; gap: 2px; }
   .nav-item {
     flex-direction: column;
     gap: 4px;
-    padding: 8px;
-    font-size: 18px;
+    padding: 8px 3px;
+    font-size: 17px;
     flex: 1;
     text-align: center;
   }
-  .nav-item span { font-size: 10px; }
+  .nav-item span { font-size: 9px; }
   .main { margin: 0; padding: 20px 15px 100px; }
   .topbar { align-items: flex-start; flex-direction: column; }
   .top-actions { width: 100%; }
@@ -520,6 +733,7 @@ label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; }
   .kpi-grid { gap: 9px; }
   .kpi-card { padding: 14px; }
   .kpi-value { font-size: 19px; }
+  .benefit-summary { margin-top: 24px; }
   .content-grid, .investment-grid { grid-template-columns: 1fr; }
   .panel { padding: 17px; }
   .currency-chip { padding: 12px; }
@@ -528,4 +742,9 @@ label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; }
   .modal-box { padding: 19px; }
   .transaction-row { gap: 8px; }
   .transaction-amount { font-size: 10px; }
+  .calendar { width: min(100%, 320px); }
+  .rule-main { gap: 9px; }
+  .rule-amount { font-size: 12px; }
+  .rule-actions { margin-left: 0; }
+  .recurrence-overview { gap: 9px; }
 }
