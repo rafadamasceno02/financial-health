@@ -29,8 +29,11 @@ let currentUser = null;
 let transactions = [];
 let signupMode = false;
 let calendarDate = new Date();
-let selectedDate = null;
+let calendarSelectedDate = null;
 let recurringRules = [];
+let currentPage = 'dashboard';
+
+// UTILITÁRIOS
 
 function money(value, currency) {
   return new Intl.NumberFormat(currencies[currency].locale, {
@@ -148,6 +151,7 @@ async function enterApp() {
   await generateRecurringOccurrences();
   await loadTransactions();
   render();
+  renderRecurringRules();
 }
 
 $('logout').addEventListener('click', async () => {
@@ -166,7 +170,7 @@ async function loadRecurringRules() {
     .from('recurring_rules')
     .select('*')
     .eq('user_id', currentUser.id)
-    .eq('active', true);
+    .order('created_at', { ascending: false });
 
   if (error) {
     notify('Erro ao carregar recorrências: ' + error.message);
@@ -265,7 +269,11 @@ function getRuleOccurrences(rule, today) {
   const dates = [];
   const horizon = addDaysISO(today, 365);
   const earliest = addDaysISO(today, -730);
-  const start = rule.start_date > earliest ? rule.start_date : earliest;
+
+  const start = rule.start_date > earliest
+    ? rule.start_date
+    : earliest;
+
   const end = rule.end_date && rule.end_date < horizon
     ? rule.end_date
     : horizon;
@@ -316,26 +324,28 @@ async function generateRecurringOccurrences() {
   const today = localISO();
   const rows = [];
 
-  recurringRules.forEach(rule => {
-    const dates = getRuleOccurrences(rule, today);
+  recurringRules
+    .filter(rule => rule.active)
+    .forEach(rule => {
+      const dates = getRuleOccurrences(rule, today);
 
-    dates.forEach(date => {
-      rows.push({
-        user_id: currentUser.id,
-        type: rule.type,
-        description: rule.description,
-        amount: rule.amount,
-        currency: rule.currency,
-        category: rule.category,
-        transaction_date: date,
-        is_future: date > today,
-        is_benefit: rule.is_benefit,
-        benefit_type: rule.benefit_type,
-        recurrence_id: rule.id,
-        recurrence_key: `${rule.id}:${date}`
+      dates.forEach(date => {
+        rows.push({
+          user_id: currentUser.id,
+          type: rule.type,
+          description: rule.description,
+          amount: rule.amount,
+          currency: rule.currency,
+          category: rule.category,
+          transaction_date: date,
+          is_future: date > today,
+          is_benefit: rule.is_benefit,
+          benefit_type: rule.benefit_type,
+          recurrence_id: rule.id,
+          recurrence_key: `${rule.id}:${date}`
+        });
       });
     });
-  });
 
   if (!rows.length) return;
 
@@ -397,29 +407,187 @@ async function createRecurringRule(transaction) {
   await generateRecurringOccurrences();
   await loadTransactions();
   render();
+  renderRecurringRules();
 }
 
-async function cancelRecurringRule(id) {
-  if (!confirm('Deseja cancelar esta recorrência? As ocorrências já criadas serão mantidas.')) {
-    return;
-  }
+// CANCELAR / REATIVAR REGRA
+
+async function setRuleStatus(id, active) {
+  const rule = recurringRules.find(r => r.id === id);
+  if (!rule) return;
+
+  const question = active
+    ? 'Deseja reativar esta recorrência?'
+    : 'Deseja cancelar esta recorrência? Os lançamentos já criados serão mantidos.';
+
+  if (!confirm(question)) return;
 
   const { error } = await db
     .from('recurring_rules')
-    .update({ active: false })
+    .update({ active })
     .eq('id', id)
     .eq('user_id', currentUser.id);
 
   if (error) {
-    notify('Erro ao cancelar recorrência: ' + error.message);
+    notify('Erro ao atualizar recorrência: ' + error.message);
     return;
   }
 
   await loadRecurringRules();
-  notify('Recorrência cancelada. Os lançamentos existentes foram mantidos.');
+
+  if (active) {
+    await generateRecurringOccurrences();
+    notify('Recorrência reativada.');
+  } else {
+    notify('Recorrência cancelada. Histórico preservado.');
+  }
+
   await loadTransactions();
   render();
+  renderRecurringRules();
 }
+
+// EDIÇÃO DE REGRA
+
+function populateEditRuleDays() {
+  $('editRuleDay').innerHTML = Array.from({ length: 31 }, (_, i) => {
+    const day = i + 1;
+    return `<option value="${day}">${day}º dia</option>`;
+  }).join('');
+}
+
+function updateEditRuleFields() {
+  const monthly = $('editRuleFrequency').value === 'monthly';
+  const fixed = $('editRulePosition').value === 'fixed';
+
+  $('editMonthlyFields').classList.toggle('hidden', !monthly);
+  $('editRuleDayWrap').classList.toggle('hidden', !monthly || !fixed);
+}
+
+function openEditRule(id) {
+  const rule = recurringRules.find(r => r.id === id);
+  if (!rule) return;
+
+  populateEditRuleDays();
+
+  $('editRuleId').value = rule.id;
+  $('editRuleDescription').value = rule.description;
+  $('editRuleAmount').value = rule.amount;
+  $('editRuleCurrency').value = rule.currency;
+  $('editRuleCategory').value = rule.category;
+  $('editRuleFrequency').value = rule.frequency;
+  $('editRulePosition').value = rule.monthly_position || 'fixed';
+  $('editRuleDay').value = rule.monthly_day || 1;
+  $('editRuleStart').value = rule.start_date;
+  $('editRuleEnd').value = rule.end_date || '';
+  $('editRuleMessage').textContent = '';
+
+  updateEditRuleFields();
+  $('editRuleModal').classList.remove('hidden');
+}
+
+function closeEditRule() {
+  $('editRuleModal').classList.add('hidden');
+}
+
+$('closeEditRule').addEventListener('click', closeEditRule);
+
+$('editRuleModal').addEventListener('click', e => {
+  if (e.target === $('editRuleModal')) closeEditRule();
+});
+
+$('editRuleFrequency').addEventListener('change', updateEditRuleFields);
+$('editRulePosition').addEventListener('change', updateEditRuleFields);
+
+$('editRuleForm').addEventListener('submit', async e => {
+  e.preventDefault();
+
+  const id = $('editRuleId').value;
+  const rule = recurringRules.find(r => r.id === id);
+
+  if (!rule) return;
+
+  const startDate = $('editRuleStart').value;
+  const endDate = $('editRuleEnd').value || null;
+
+  if (!startDate || (endDate && endDate < startDate)) {
+    $('editRuleMessage').textContent = 'Confira as datas informadas.';
+    return;
+  }
+
+  const frequency = $('editRuleFrequency').value;
+  const position = frequency === 'monthly'
+    ? $('editRulePosition').value
+    : null;
+
+  const updatedRule = {
+    description: $('editRuleDescription').value.trim(),
+    amount: Number($('editRuleAmount').value),
+    currency: $('editRuleCurrency').value,
+    category: $('editRuleCategory').value,
+    frequency,
+    monthly_position: position,
+    monthly_day: frequency === 'monthly' && position === 'fixed'
+      ? Number($('editRuleDay').value)
+      : null,
+    start_date: startDate,
+    end_date: endDate
+  };
+
+  if (!updatedRule.description || updatedRule.amount <= 0) {
+    $('editRuleMessage').textContent = 'Informe descrição e valor válidos.';
+    return;
+  }
+
+  $('saveRuleChanges').disabled = true;
+  $('saveRuleChanges').textContent = 'Salvando...';
+
+  try {
+    const { error } = await db
+      .from('recurring_rules')
+      .update(updatedRule)
+      .eq('id', id)
+      .eq('user_id', currentUser.id);
+
+    if (error) throw error;
+
+    // Atualiza somente ocorrências futuras.
+    // O histórico passado permanece intacto.
+    const today = localISO();
+
+    const { error: transactionError } = await db
+      .from('transactions')
+      .update({
+        description: updatedRule.description,
+        amount: updatedRule.amount,
+        currency: updatedRule.currency,
+        category: updatedRule.category,
+        is_future: true
+      })
+      .eq('recurrence_id', id)
+      .eq('user_id', currentUser.id)
+      .gte('transaction_date', addDaysISO(today, 1));
+
+    if (transactionError) throw transactionError;
+
+    await loadRecurringRules();
+    await generateRecurringOccurrences();
+    await loadTransactions();
+
+    render();
+    renderRecurringRules();
+    closeEditRule();
+
+    notify('Recorrência atualizada com sucesso.');
+  } catch (error) {
+    $('editRuleMessage').textContent = error.message;
+  } finally {
+    $('saveRuleChanges').disabled = false;
+    $('saveRuleChanges').textContent = 'Salvar alterações';
+  }
+});
+
+// EXCLUSÃO DE MOVIMENTAÇÃO
 
 async function deleteTransaction(id) {
   if (!confirm('Deseja excluir esta movimentação?')) return;
@@ -524,6 +692,12 @@ function render() {
       money(benefits, currency);
   }
 
+  // Os cartões das outras moedas aparecem somente na visão geral.
+  $('overviewCurrencies').classList.toggle(
+    'hidden',
+    currency !== 'ALL'
+  );
+
   renderCurrencyOverview();
   renderRecent(list);
   renderUpcoming(list);
@@ -534,7 +708,11 @@ function renderCurrencyOverview() {
   const codes = Object.keys(currencies);
 
   $('overviewCurrencies').innerHTML = codes.map(code => {
-    const t = totals(transactions.filter(x => !x.is_future), code);
+    const t = totals(
+      transactions.filter(x => !x.is_future),
+      code
+    );
+
     const benefits = benefitTotals(
       transactions.filter(x =>
         !x.is_future &&
@@ -554,7 +732,7 @@ function renderCurrencyOverview() {
   }).join('');
 }
 
-// LISTAS
+// LISTAS DE MOVIMENTAÇÕES
 
 function transactionHTML(t, showDelete = false) {
   const income = t.type === 'income';
@@ -584,7 +762,6 @@ function transactionHTML(t, showDelete = false) {
       ${showDelete ? `
         <div class="transaction-actions">
           <button class="delete-btn" data-delete="${t.id}" title="Excluir ocorrência">✕</button>
-          ${recurring ? `<button class="delete-btn cancel-rule-btn" data-cancel-rule="${t.recurrence_id}" title="Cancelar recorrência">Ⅱ</button>` : ''}
         </div>
       ` : ''}
     </div>
@@ -631,15 +808,100 @@ function renderAll(list) {
       deleteTransaction(button.dataset.delete)
     );
   });
+}
 
-  document.querySelectorAll('[data-cancel-rule]').forEach(button => {
-    button.addEventListener('click', () =>
-      cancelRecurringRule(button.dataset.cancelRule)
-    );
+// RENDERIZAÇÃO DA ABA DE RECORRÊNCIAS
+
+function recurrenceDescription(rule) {
+  if (rule.frequency === 'daily') return 'Todos os dias';
+
+  if (rule.monthly_position === 'last_business') {
+    return 'Último dia útil de cada mês';
+  }
+
+  if (rule.monthly_position === 'penultimate_business') {
+    return 'Penúltimo dia útil de cada mês';
+  }
+
+  return `Todo dia ${rule.monthly_day} de cada mês`;
+}
+
+function renderRecurringRules() {
+  const active = recurringRules.filter(r => r.active);
+  const paused = recurringRules.filter(r => !r.active);
+
+  $('activeRulesCount').textContent = active.length;
+  $('pausedRulesCount').textContent = paused.length;
+
+  if (!recurringRules.length) {
+    $('recurringRulesList').innerHTML = `
+      <div class="rule-empty">
+        <strong>Nenhuma recorrência cadastrada</strong>
+        <p>Crie sua primeira regra para automatizar salários, contas e benefícios.</p>
+      </div>
+    `;
+    return;
+  }
+
+  $('recurringRulesList').innerHTML = recurringRules.map(rule => {
+    const isIncome = rule.type === 'income';
+    const status = rule.active ? 'Ativa' : 'Pausada';
+    const benefit = rule.is_benefit
+      ? `<span class="mini-badge benefit">${escapeHTML(benefitNames[rule.benefit_type] || 'BENEFÍCIO')}</span>`
+      : '';
+
+    return `
+      <div class="rule-card">
+        <div class="rule-main">
+          <div class="rule-icon">${isIncome ? '↗' : '↘'}</div>
+          <div class="rule-info">
+            <strong>${escapeHTML(rule.description)}</strong>
+            <small>
+              ${escapeHTML(rule.category)} · ${escapeHTML(recurrenceDescription(rule))}
+            </small>
+            <small>
+              Início: ${formatDate(rule.start_date)}
+              ${rule.end_date ? ` · Término: ${formatDate(rule.end_date)}` : ' · Sem data final'}
+            </small>
+            <div class="transaction-badges">
+              ${benefit}
+              <span class="rule-status ${rule.active ? '' : 'paused'}">${status}</span>
+            </div>
+          </div>
+          <div class="rule-amount ${isIncome ? 'green' : 'red'}">
+            ${money(rule.amount, rule.currency)}
+          </div>
+        </div>
+
+        <div class="rule-actions">
+          <button class="rule-action" data-edit-rule="${rule.id}">Editar</button>
+          ${
+            rule.active
+              ? `<button class="rule-action danger" data-rule-status="${rule.id}" data-active="false">Cancelar</button>`
+              : `<button class="rule-action" data-rule-status="${rule.id}" data-active="true">Reativar</button>`
+          }
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  document.querySelectorAll('[data-edit-rule]').forEach(button => {
+    button.addEventListener('click', () => {
+      openEditRule(button.dataset.editRule);
+    });
+  });
+
+  document.querySelectorAll('[data-rule-status]').forEach(button => {
+    button.addEventListener('click', () => {
+      setRuleStatus(
+        button.dataset.ruleStatus,
+        button.dataset.active === 'true'
+      );
+    });
   });
 }
 
-// MODAL
+// MODAL DE MOVIMENTAÇÃO
 
 function populateMonthlyDays() {
   $('monthlyDay').innerHTML = Array.from({ length: 31 }, (_, i) => {
@@ -677,12 +939,12 @@ function openModal() {
   $('transactionMessage').textContent = '';
   $('transactionForm').reset();
 
-  selectedDate = new Date();
+  calendarSelectedDate = new Date();
   calendarDate = new Date();
 
-  const today = localISO(selectedDate);
+  const today = localISO(calendarSelectedDate);
 
-  $('transactionDate').value = today;
+  updateCalendarLabel(today);
   $('recurrenceStart').value = today;
   $('recurrenceEnd').value = '';
 
@@ -699,6 +961,7 @@ function closeModal() {
 
 $('newTransaction').addEventListener('click', openModal);
 $('newTransaction2').addEventListener('click', openModal);
+$('newRecurringFromPage').addEventListener('click', openModal);
 $('closeModal').addEventListener('click', closeModal);
 
 $('transactionModal').addEventListener('click', e => {
@@ -710,12 +973,6 @@ $('isBenefit').addEventListener('change', updateBenefitFields);
 $('isRecurring').addEventListener('change', updateRecurrenceFields);
 $('recurrenceFrequency').addEventListener('change', updateRecurrenceFields);
 $('monthlyPosition').addEventListener('change', updateRecurrenceFields);
-
-$('transactionDate').addEventListener('change', () => {
-  if ($('isRecurring').checked) {
-    $('recurrenceStart').value = $('transactionDate').value;
-  }
-});
 
 $('transactionForm').addEventListener('submit', async e => {
   e.preventDefault();
@@ -731,7 +988,7 @@ $('transactionForm').addEventListener('submit', async e => {
     amount: Number($('amount').value),
     currency: $('transactionCurrency').value,
     category: isBenefit ? 'Benefícios' : $('category').value,
-    transaction_date: $('transactionDate').value,
+    transaction_date: $('transactionDate').dataset.value,
     is_future: $('isFuture').checked,
     is_benefit: isBenefit,
     benefit_type: isBenefit ? $('benefitType').value : null
@@ -760,6 +1017,7 @@ $('transactionForm').addEventListener('submit', async e => {
 
   try {
     if (isRecurring) {
+      $('recurrenceStart').value = transaction.transaction_date;
       await createRecurringRule(transaction);
       notify('Recorrência criada com sucesso.');
     } else {
@@ -776,11 +1034,26 @@ $('transactionForm').addEventListener('submit', async e => {
   }
 });
 
-// CALENDÁRIO PERSONALIZADO
+// CALENDÁRIO PERSONALIZADO ORBIT
+
+function updateCalendarLabel(value) {
+  $('transactionDate').dataset.value = value;
+  $('transactionDateLabel').textContent = formatDate(value);
+}
 
 $('transactionDate').addEventListener('click', () => {
   $('calendar').classList.toggle('hidden');
-  renderCalendar();
+
+  if (!$('calendar').classList.contains('hidden')) {
+    const value = $('transactionDate').dataset.value || localISO();
+    calendarSelectedDate = dateFromISO(value);
+    calendarDate = new Date(
+      calendarSelectedDate.getFullYear(),
+      calendarSelectedDate.getMonth(),
+      1
+    );
+    renderCalendar();
+  }
 });
 
 function renderCalendar() {
@@ -790,6 +1063,7 @@ function renderCalendar() {
   const firstDay = new Date(year, month, 1).getDay();
   const days = new Date(year, month + 1, 0).getDate();
   const today = localISO();
+  const selected = localISO(calendarSelectedDate);
 
   const monthName = new Intl.DateTimeFormat('pt-BR', {
     month: 'long',
@@ -798,29 +1072,46 @@ function renderCalendar() {
 
   let html = `
     <div class="calendar-header">
-      <button type="button" id="prevMonth">‹</button>
-      <strong>${monthName}</strong>
-      <button type="button" id="nextMonth">›</button>
+      <strong class="calendar-month">${monthName}</strong>
+      <div class="calendar-nav">
+        <button type="button" id="prevMonth" aria-label="Mês anterior">‹</button>
+        <button type="button" id="nextMonth" aria-label="Próximo mês">›</button>
+      </div>
     </div>
     <div class="calendar-grid">
-      ${['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map(d => `<span>${d}</span>`).join('')}
+      ${['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
+        .map(d => `<span class="weekday">${d}</span>`).join('')}
   `;
 
-  for (let i = 0; i < firstDay; i++) html += '<span></span>';
+  for (let i = 0; i < firstDay; i++) {
+    html += '<span class="empty-day"></span>';
+  }
 
   for (let d = 1; d <= days; d++) {
     const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    const selected = $('transactionDate').value === date;
-    const isToday = today === date;
+    const classes = [
+      date === selected ? 'selected' : '',
+      date === today ? 'today' : ''
+    ].filter(Boolean).join(' ');
 
     html += `
-      <button type="button"
-        class="${selected ? 'selected' : ''} ${isToday ? 'today' : ''}"
-        data-date="${date}">${d}</button>
+      <button type="button" class="${classes}" data-date="${date}">
+        ${d}
+      </button>
     `;
   }
 
-  html += '</div>';
+  html += `
+    </div>
+    <div class="calendar-footer">
+      <button type="button" id="calendarToday">Hoje</button>
+      <div>
+        <button type="button" id="calendarClose">Fechar</button>
+        <button type="button" class="calendar-confirm" id="calendarConfirm">Confirmar</button>
+      </div>
+    </div>
+  `;
+
   $('calendar').innerHTML = html;
 
   $('prevMonth').addEventListener('click', () => {
@@ -835,10 +1126,34 @@ function renderCalendar() {
 
   $('calendar').querySelectorAll('[data-date]').forEach(button => {
     button.addEventListener('click', () => {
-      $('transactionDate').value = button.dataset.date;
-      $('recurrenceStart').value = button.dataset.date;
-      $('calendar').classList.add('hidden');
+      calendarSelectedDate = dateFromISO(button.dataset.date);
+      renderCalendar();
     });
+  });
+
+  $('calendarToday').addEventListener('click', () => {
+    calendarSelectedDate = new Date();
+    calendarDate = new Date(
+      calendarSelectedDate.getFullYear(),
+      calendarSelectedDate.getMonth(),
+      1
+    );
+    renderCalendar();
+  });
+
+  $('calendarClose').addEventListener('click', () => {
+    $('calendar').classList.add('hidden');
+  });
+
+  $('calendarConfirm').addEventListener('click', () => {
+    const value = localISO(calendarSelectedDate);
+    updateCalendarLabel(value);
+
+    if ($('isRecurring').checked) {
+      $('recurrenceStart').value = value;
+    }
+
+    $('calendar').classList.add('hidden');
   });
 }
 
@@ -894,8 +1209,16 @@ $('investmentForm').addEventListener('submit', e => {
 // NAVEGAÇÃO
 
 function navigate(page) {
-  document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
-  $(`${page}Page`).classList.remove('hidden');
+  const pageElement = $(`${page}Page`);
+  if (!pageElement) return;
+
+  currentPage = page;
+
+  document.querySelectorAll('.page').forEach(p => {
+    p.classList.add('hidden');
+  });
+
+  pageElement.classList.remove('hidden');
 
   document.querySelectorAll('.nav-item').forEach(n => {
     n.classList.toggle('active', n.dataset.page === page);
@@ -904,10 +1227,15 @@ function navigate(page) {
   const titles = {
     dashboard: 'Visão geral',
     transactions: 'Movimentações',
+    recurrences: 'Recorrências',
     investments: 'Investimentos'
   };
 
   $('pageTitle').textContent = titles[page];
+
+  if (page === 'recurrences') {
+    renderRecurringRules();
+  }
 }
 
 document.querySelectorAll('.nav-item').forEach(button => {
@@ -925,8 +1253,10 @@ $('currencyFilter').addEventListener('change', render);
 async function initialize() {
   calculateInvestment();
   populateMonthlyDays();
+  populateEditRuleDays();
   updateRecurrenceFields();
   updateBenefitFields();
+  updateEditRuleFields();
 
   const { data, error } = await db.auth.getSession();
 
